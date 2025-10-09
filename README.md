@@ -39,32 +39,26 @@ This project demonstrates advanced process injection techniques using Python wit
 ### 1. Spawn a Hidden, Suspended Process
 
 - Calls `CreateProcessA()` to launch notepad.exe, hidden and frozen.
-- *Layman:* Runs notepad, but keeps it invisible and paused so we can tamper with it first .
-
+- 
 ### 2. Allocate Memory
 
 - Uses `VirtualAllocEx()` to open a space in that process’s memory.
-- *Layman:* Think of this as reserving a pocket in the running program to hide some data.
 
 ### 3. Inject Shellcode
 
 - Writes the shellcode into this pocket with `WriteProcessMemory()`.
-- *Layman:* Copies in the code that will do what we want—before the regular process starts.
 
 ### 4. Change Memory Protections
 
 - Modifies the pocket's setting from ‘just storage’ to ‘runnable code’ using `VirtualProtectEx()`.
-- *Layman:* Permits the pocket to act as a mini program, not just a data bin.
 
 ### 5. Trigger Execution
 
 - **Via APC (`QueueUserAPC`)**: Queues the shellcode as an asynchronous call for the target thread to execute when resumed.
-- **Alternative: Remote Thread**: (Commented) Launches an immediate thread at the shellcode (no queuing, less stealth).
 
 ### 6. Resume the Thread
 
 - Uses `ResumeThread()` to let the process's main thread continue—causing the shellcode to be executed via the queued APC.
-- *Layman:* Wakes up the process, which then runs the injected code.
 
 ---
 

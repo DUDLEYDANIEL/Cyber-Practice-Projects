@@ -39,7 +39,7 @@ This project demonstrates advanced process injection techniques using Python wit
 ### 1. Spawn a Hidden, Suspended Process
 
 - Calls `CreateProcessA()` to launch notepad.exe, hidden and frozen.
-- 
+  
 ### 2. Allocate Memory
 
 - Uses `VirtualAllocEx()` to open a space in that process’s memory.
